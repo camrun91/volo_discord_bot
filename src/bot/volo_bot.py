@@ -32,8 +32,15 @@ class VoloBot(discord.Bot):
         else:
             self.transcriber_type = "local"
         if PLAYER_MAP_FILE_PATH:
-            with open(PLAYER_MAP_FILE_PATH, "r", encoding="utf-8") as file:
-                self.player_map = yaml.safe_load(file)
+            try:
+                with open(PLAYER_MAP_FILE_PATH, "r", encoding="utf-8") as file:
+                    self.player_map = yaml.safe_load(file)
+            except Exception as e:
+                logger.warning(
+                    "Unable to load player map from %s: %s",
+                    PLAYER_MAP_FILE_PATH,
+                    e,
+                )
 
     
 
@@ -67,8 +74,10 @@ class VoloBot(discord.Bot):
         try:
             self.start_whisper_sink(ctx)
             self.guild_is_recording[ctx.guild_id] = True
-        except Exception as e:
-            logger.error(f"Error starting whisper sink: {e}")
+        except Exception:
+            logger.exception(
+                "Error starting whisper sink for guild %s", ctx.guild_id
+            )
 
     def start_whisper_sink(self, ctx: discord.context.ApplicationContext):
         guild_voice_sink = self.guild_whisper_sinks.get(ctx.guild_id, None)
@@ -149,8 +158,18 @@ class VoloBot(discord.Bot):
         logger.info(f"{str(player_map)}")
         self.player_map.update(player_map)
         if PLAYER_MAP_FILE_PATH:
-            with open(PLAYER_MAP_FILE_PATH, "w", encoding="utf-8") as file:
-                yaml.dump(self.player_map, file, default_flow_style=False, allow_unicode=True)
+            try:
+                with open(PLAYER_MAP_FILE_PATH, "w", encoding="utf-8") as file:
+                    yaml.dump(
+                        self.player_map,
+                        file,
+                        default_flow_style=False,
+                        allow_unicode=True,
+                    )
+            except Exception:
+                logger.exception(
+                    "Unable to update player map at %s", PLAYER_MAP_FILE_PATH
+                )
 
     async def stop_and_cleanup(self):
         try:
@@ -160,8 +179,8 @@ class VoloBot(discord.Bot):
                 logger.debug(
                     f"Stopped whisper sink for guild {sink.vc.channel.guild.id} in cleanup.")
             self.guild_whisper_sinks.clear()
-        except Exception as e:
-            logger.error(f"Error stopping whisper sinks: {e}")
+        except Exception:
+            logger.exception("Error stopping whisper sinks")
         finally:
             logger.info("Cleanup completed.")
     

@@ -113,9 +113,13 @@ if __name__ == "__main__":
             helper.guild_id = guild_id
             helper.set_vc(vc)
             bot.guild_to_helper[guild_id] = helper
-            await ctx.respond(f"Ah, splendid! The lore shall now flow as freely as the finest ale. 🍺 Prepare to immortalize brilliance!", ephemeral=False)
+            await ctx.respond(
+                "Ah, splendid! The lore shall now flow as freely as the finest ale. 🍺 Prepare to immortalize brilliance!",
+                ephemeral=False,
+            )
             await ctx.guild.change_voice_state(channel=author_vc.channel, self_mute=True)
         except Exception as e:
+            logger.exception("Error processing /connect command")
             await ctx.respond(f"{e}", ephemeral=True)
 
     @bot.slash_command(name="scribe", description="Ink the Saga of this adventure.")
@@ -133,8 +137,15 @@ if __name__ == "__main__":
         if bot.guild_is_recording.get(ctx.guild_id, False):
             await ctx.respond("I'm sorry my liege, I can only write so fast.. 😥 ✒️", ephemeral=True)
             return
-        bot.start_recording(ctx)
-        await ctx.respond("Your words are now inscribed in the annals of history! ✍️ Fear not, for V.O.L.O leaves nothing unwritten", ephemeral=False)
+        try:
+            bot.start_recording(ctx)
+            await ctx.respond(
+                "Your words are now inscribed in the annals of history! ✍️ Fear not, for V.O.L.O leaves nothing unwritten",
+                ephemeral=False,
+            )
+        except Exception:
+            logger.exception("Error processing /scribe command")
+            await ctx.respond("Failed to begin scribing.", ephemeral=True)
     
     @bot.slash_command(name="stop", description="Close the Tome on this adventure.")
     async def stop(ctx: discord.context.ApplicationContext):
@@ -157,11 +168,22 @@ if __name__ == "__main__":
         await ctx.trigger_typing()
         
         if bot.guild_is_recording.get(guild_id, False):
-            await bot.get_transcription(ctx)
-            bot.stop_recording(ctx)
-            bot.guild_is_recording[guild_id] = False
-            await ctx.respond("The quill rests. 🖋️ A pause, but not the end. Awaiting your next grand tale, of course!", ephemeral=False)
-            #await bot.get_transcription(ctx)
+            try:
+                await bot.get_transcription(ctx)
+                bot.stop_recording(ctx)
+                bot.guild_is_recording[guild_id] = False
+            except Exception:
+                logger.exception("Error processing /stop command")
+                await ctx.respond(
+                    "An error occurred while stopping transcription.",
+                    ephemeral=True,
+                )
+                return
+            await ctx.respond(
+                "The quill rests. 🖋️ A pause, but not the end. Awaiting your next grand tale, of course!",
+                ephemeral=False,
+            )
+            # await bot.get_transcription(ctx)
             bot.cleanup_sink(ctx)
         
     @bot.slash_command(name="disconnect", description="VOLO leaves your party. Goodbye, friend.")
@@ -180,12 +202,23 @@ if __name__ == "__main__":
             return
         
         await ctx.trigger_typing()
-        await bot_vc.disconnect()
-        helper.guild_id = None
-        helper.set_vc(None)
-        bot.guild_to_helper.pop(guild_id, None)
+        try:
+            await bot_vc.disconnect()
+            helper.guild_id = None
+            helper.set_vc(None)
+            bot.guild_to_helper.pop(guild_id, None)
+        except Exception:
+            logger.exception("Error processing /disconnect command")
+            await ctx.respond(
+                "An error occurred while disconnecting.",
+                ephemeral=True,
+            )
+            return
 
-        await ctx.respond("The tome is sealed! 📖 Another chapter well-told, another adventure preserved. You have my gratitude!", ephemeral=False)
+        await ctx.respond(
+            "The tome is sealed! 📖 Another chapter well-told, another adventure preserved. You have my gratitude!",
+            ephemeral=False,
+        )
 
     @bot.slash_command(name="generate_pdf", description="Generate a PDF of the transcriptions.")
     async def generate_pdf(ctx: discord.context.ApplicationContext):
@@ -194,21 +227,36 @@ if __name__ == "__main__":
         if not helper:
             await ctx.respond("Well, that's akward. I dont seem to be in your party.", ephemeral=True)
             return
-        transcription = await bot.get_transcription(ctx)
-        if not transcription:
-            await ctx.respond("I'm sorry, but it appears I have no transcriptions to write into the tome.", ephemeral=True)
-            return
-        pdf_file_path = await pdf_generator(transcription)
-        # Send the PDF as an attachment
-        if os.path.exists(pdf_file_path):
-            try:
-                with open(pdf_file_path, "rb") as f:
-                    discord_file = discord.File(f, filename=f"session_transcription.pdf")
-                    await ctx.respond("Here is the transcription from this session:", file=discord_file)
-            finally:
-                os.remove(pdf_file_path)
-        else:
-            await ctx.respond("No transcription file could be generated.", ephemeral=True)
+        try:
+            transcription = await bot.get_transcription(ctx)
+            if not transcription:
+                await ctx.respond(
+                    "I'm sorry, but it appears I have no transcriptions to write into the tome.",
+                    ephemeral=True,
+                )
+                return
+            pdf_file_path = await pdf_generator(transcription)
+            # Send the PDF as an attachment
+            if os.path.exists(pdf_file_path):
+                try:
+                    with open(pdf_file_path, "rb") as f:
+                        discord_file = discord.File(
+                            f, filename=f"session_transcription.pdf"
+                        )
+                        await ctx.respond(
+                            "Here is the transcription from this session:",
+                            file=discord_file,
+                        )
+                finally:
+                    os.remove(pdf_file_path)
+            else:
+                await ctx.respond(
+                    "No transcription file could be generated.",
+                    ephemeral=True,
+                )
+        except Exception:
+            logger.exception("Error processing /generate_pdf command")
+            await ctx.respond("Failed to generate PDF.", ephemeral=True)
 
 
     @bot.slash_command(name="update_player_map", description="Updates the player_map. If `PLAYER_MAP_FILE_PATH` is defined writes info to that location.")
@@ -220,33 +268,46 @@ if __name__ == "__main__":
             await bot.update_player_map(ctx)
             await ctx.respond("📜✨ Behold, the Tome of True Names is Updated ✨📜")
         except Exception as e:
+            logger.exception("Error processing /update_player_map command")
             await ctx.respond(f"Unable to update player_map.yml.:\n{e}", ephemeral=True)
             raise e
 
 
     @bot.slash_command(name="help", description="Show the help message.")
     async def help(ctx: discord.context.ApplicationContext):
-        embed_fields = [
-            discord.EmbedField(
-                name="/connect", value="Connect to your voice channel.", inline=True),
-            discord.EmbedField(
-                name="/disconnect", value="Disconnect from your voice channel.", inline=True),
-            discord.EmbedField(
-                name="/scribe", value="Transcribe the voice channel.", inline=True),
-            discord.EmbedField(
-                name="/stop", value="Stop the transcription.", inline=True),
-            discord.EmbedField(
-                name="/generate_pdf", value="Generate a PDF of the transcriptions.", inline=True),
-            discord.EmbedField(
-                name="/help", value="Show the help message.", inline=True),
-        ]
+        try:
+            embed_fields = [
+                discord.EmbedField(
+                    name="/connect", value="Connect to your voice channel.", inline=True
+                ),
+                discord.EmbedField(
+                    name="/disconnect", value="Disconnect from your voice channel.", inline=True
+                ),
+                discord.EmbedField(
+                    name="/scribe", value="Transcribe the voice channel.", inline=True
+                ),
+                discord.EmbedField(
+                    name="/stop", value="Stop the transcription.", inline=True
+                ),
+                discord.EmbedField(
+                    name="/generate_pdf", value="Generate a PDF of the transcriptions.", inline=True
+                ),
+                discord.EmbedField(
+                    name="/help", value="Show the help message.", inline=True
+                ),
+            ]
 
-        embed = discord.Embed(title="Volo Help 📖",
-                              description="""Summon the Lorekeeper’s Wisdom 🔉 ➡️ 📃""",
-                              color=discord.Color.blue(),
-                              fields=embed_fields)
+            embed = discord.Embed(
+                title="Volo Help 📖",
+                description="""Summon the Lorekeeper’s Wisdom 🔉 ➡️ 📃""",
+                color=discord.Color.blue(),
+                fields=embed_fields,
+            )
 
-        await ctx.respond(embed=embed, ephemeral=True)
+            await ctx.respond(embed=embed, ephemeral=True)
+        except Exception:
+            logger.exception("Error processing /help command")
+            await ctx.respond("Failed to display help message.", ephemeral=True)
 
 
 
